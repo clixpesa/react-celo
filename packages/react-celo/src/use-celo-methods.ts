@@ -3,7 +3,6 @@ import { MiniContractKit } from '@celo/contractkit/lib/mini-kit';
 import { useCallback } from 'react';
 import { isMobile } from 'react-device-detect';
 
-import { CONNECTOR_TYPES } from './connectors';
 import { STATIC_NETWORK_WALLETS, WalletTypes } from './constants';
 import {
   ContractCacheBuilder,
@@ -12,17 +11,16 @@ import {
 import { Dispatcher } from './react-celo-provider-state';
 import { Connector, Network, Theme } from './types';
 import { contrastCheck, fixTheme } from './utils/colors';
-import { getLastUsedWalletArgs } from './utils/local-storage';
+import networkWatcher from './utils/network-watcher';
 import persistor from './utils/persistor';
 import updater from './utils/updater';
 interface CeloMethodsInput {
   connector: Connector;
   networks: Network[];
-  network: Network;
 }
 
 export function useCeloMethods(
-  { connector, networks, network }: CeloMethodsInput,
+  { connector, networks }: CeloMethodsInput,
   dispatch: Dispatcher,
   buildContractsCache?: ContractCacheBuilder
 ): CeloMethods {
@@ -36,52 +34,9 @@ export function useCeloMethods(
         // need to set the event listeners here before initialise()
         updater(nextConnector, dispatch);
         persistor(nextConnector);
+        networkWatcher(nextConnector, networks);
         const initialisedConnector = await nextConnector.initialise();
         dispatch('initialisedConnector', initialisedConnector);
-
-        // If the new wallet already has a specific network it's
-        // using then we should go with that one.
-        const netId =
-          await initialisedConnector.kit.connection.web3.eth.net.getId();
-        const newNetwork = networks.find((n) => netId === n.chainId);
-        if (newNetwork !== network) {
-          dispatch('setNetwork', network);
-        }
-
-        // This happens if the network changes on the wallet side
-        // and we need to update what network we're storing
-        // accordingly.
-        initialisedConnector.onNetworkChange?.((chainId) => {
-          const network = networks.find((n) => n.chainId === chainId);
-          if (netId === chainId || !network) return;
-
-          // TODO: We should probably throw an error if we can't find the new chainId
-
-          if (network) {
-            dispatch('setNetwork', network);
-            initialisedConnector.updateKitWithNetwork &&
-              initialisedConnector
-                .updateKitWithNetwork(network)
-                .then(() => {
-                  dispatch('initialisedConnector', initialisedConnector);
-                })
-                .catch((e) => {
-                  console.error(
-                    '[react-celo] Error switching network',
-                    nextConnector.type,
-                    e
-                  );
-                  const error =
-                    e instanceof Error
-                      ? e
-                      : new Error(
-                          `Failed to initialise connector with ${network.name}`
-                        );
-                  dispatch('setConnectorInitError', error);
-                  throw e;
-                });
-          }
-        });
       } catch (e) {
         if (typeof e === 'symbol') {
           console.info(
@@ -91,19 +46,13 @@ export function useCeloMethods(
           throw e;
         }
 
-        console.error(
-          '[react-celo] Error initializing connector',
-          nextConnector.type,
-          e
-        );
-
         const error =
           e instanceof Error ? e : new Error('Failed to initialise connector');
         dispatch('setConnectorInitError', error);
         throw e;
       }
     },
-    [dispatch, network, networks]
+    [dispatch, networks]
   );
 
   // This is just to be used to for users to explicitly change
@@ -115,21 +64,9 @@ export function useCeloMethods(
           "The connected wallet's network must be changed from the wallet."
         );
       }
-
-      if (connector.initialised) {
-        const connectorArgs = getLastUsedWalletArgs() || [];
-        await connector.close();
-        const ConnectorConstructor = CONNECTOR_TYPES[connector.type];
-        const newConnector = new ConnectorConstructor(
-          newNetwork,
-          ...connectorArgs
-        );
-        await initConnector(newConnector);
-      }
-
-      dispatch('setNetwork', newNetwork);
+      await connector.startNetworkChangeFromApp(newNetwork);
     },
-    [dispatch, connector, initConnector]
+    [connector]
   );
 
   const connect = useCallback(async (): Promise<Connector> => {
