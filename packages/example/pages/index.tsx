@@ -298,6 +298,7 @@ function HomePage(): React.ReactElement {
                   const newNetwork = networks.find(
                     (n) => n.name === e.target.value
                   );
+                  console.info('net', e.target.value, newNetwork);
                   if (newNetwork) {
                     await updateNetwork(newNetwork);
                   }
@@ -440,7 +441,7 @@ export default function Home(): React.ReactElement {
         url: 'https://react-celo.vercel.app',
         icon: 'https://react-celo.vercel.app/favicon.ico',
       }}
-      network={Alfajores}
+      defaultNetwork={Alfajores.name}
       connectModal={{
         providersOptions: { searchable: true },
       }}

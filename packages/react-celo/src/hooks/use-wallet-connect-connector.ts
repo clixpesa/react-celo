@@ -61,9 +61,6 @@ export default function useWalletConnectConnector(
           setUri(newUri);
         }
       });
-      connector.onConnect(() => {
-        setLoading(true);
-      });
       connector.onClose(() => {
         // This calling destroy will led to a loop unless I am mistaken about what causes onClose to be called.
         void destroy().then(() => {
